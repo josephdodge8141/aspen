@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -23,75 +23,62 @@ import {
   Copy,
   RefreshCw
 } from 'lucide-react';
+import { servicesService, type Service as BackendService, type ServiceSegment } from '../services';
 
-interface Service {
-  id: string;
-  name: string;
-  environment: 'dev' | 'stage' | 'prod';
-  team: string;
-  apiKey: string;
+interface Service extends BackendService {
+  segments: ServiceSegment[];
   workflowCount: number;
   expertCount: number;
-  segments: Array<{
-    name: string;
-    type: 'user_id' | 'client_id' | 'custom';
-    required: boolean;
-  }>;
-  createdAt: Date;
-  lastUsed?: Date;
 }
 
-const mockServices: Service[] = [
-  {
-    id: '1',
-    name: 'E-commerce Platform',
-    environment: 'prod',
-    team: 'Engineering',
-    apiKey: 'sk_prod_AbCdEf123456...',
-    workflowCount: 5,
-    expertCount: 3,
-    segments: [
-      { name: 'user_id', type: 'user_id', required: true },
-      { name: 'store_id', type: 'custom', required: true }
-    ],
-    createdAt: new Date('2024-01-15'),
-    lastUsed: new Date('2024-01-20')
-  },
-  {
-    id: '2',
-    name: 'Marketing Dashboard',
-    environment: 'stage',
-    team: 'Marketing',
-    apiKey: 'sk_stage_GhIjKl789012...',
-    workflowCount: 2,
-    expertCount: 4,
-    segments: [
-      { name: 'user_id', type: 'user_id', required: true },
-      { name: 'client_id', type: 'client_id', required: false }
-    ],
-    createdAt: new Date('2024-02-01'),
-    lastUsed: new Date('2024-02-05')
-  },
-  {
-    id: '3',
-    name: 'Analytics Service',
-    environment: 'dev',
-    team: 'Data',
-    apiKey: 'sk_dev_MnOpQr345678...',
-    workflowCount: 1,
-    expertCount: 2,
-    segments: [
-      { name: 'user_id', type: 'user_id', required: true }
-    ],
-    createdAt: new Date('2024-02-10')
-  }
-];
-
 export default function ServicesPage() {
-  const [services, setServices] = useState<Service[]>(mockServices);
+  const [services, setServices] = useState<Service[]>([]);
   const [editingService, setEditingService] = useState<Service | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [visibleApiKeys, setVisibleApiKeys] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadServices();
+  }, []);
+
+  const loadServices = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const backendServices = await servicesService.listServices();
+      
+      const servicesWithDetails = await Promise.all(
+        backendServices.map(async (service) => {
+          try {
+            const segments = await servicesService.listSegments(service.id);
+            const exposure = await servicesService.getServiceExposure(service.id);
+            
+            return {
+              ...service,
+              segments,
+              workflowCount: exposure.workflows.length,
+              expertCount: exposure.experts.length,
+            } as Service;
+          } catch (err) {
+            return {
+              ...service,
+              segments: [],
+              workflowCount: 0,
+              expertCount: 0,
+            } as Service;
+          }
+        })
+      );
+      
+      setServices(servicesWithDetails);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load services');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleEdit = (service: Service) => {
     setEditingService(service);
@@ -99,56 +86,58 @@ export default function ServicesPage() {
 
   const handleCreate = () => {
     const newService: Service = {
-      id: Date.now().toString(),
+      id: 0,
       name: '',
       environment: 'dev',
-      team: 'Default',
-      apiKey: generateApiKey('dev'),
+      api_key_last4: '',
+      segments: [],
       workflowCount: 0,
       expertCount: 0,
-      segments: [
-        { name: 'user_id', type: 'user_id', required: true }
-      ],
-      createdAt: new Date()
     };
     setEditingService(newService);
     setIsCreateModalOpen(true);
   };
 
-  const handleSave = (updatedService: Service) => {
-    if (isCreateModalOpen) {
-      setServices([...services, updatedService]);
-      setIsCreateModalOpen(false);
-    } else {
-      setServices(services.map(s => s.id === updatedService.id ? updatedService : s));
+  const handleSave = async (updatedService: Service) => {
+    try {
+      if (isCreateModalOpen) {
+        await servicesService.createService({
+          name: updatedService.name,
+          environment: updatedService.environment,
+        });
+        setIsCreateModalOpen(false);
+      } else {
+        // Note: Backend doesn't have update service endpoint yet
+        console.warn('Service update not implemented in backend yet');
+      }
+      await loadServices();
+      setEditingService(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save service');
     }
-    setEditingService(null);
   };
 
-  const toggleApiKeyVisibility = (serviceId: string) => {
+  const toggleApiKeyVisibility = (serviceId: number) => {
     const newVisible = new Set(visibleApiKeys);
-    if (newVisible.has(serviceId)) {
-      newVisible.delete(serviceId);
+    const serviceIdStr = serviceId.toString();
+    if (newVisible.has(serviceIdStr)) {
+      newVisible.delete(serviceIdStr);
     } else {
-      newVisible.add(serviceId);
+      newVisible.add(serviceIdStr);
     }
     setVisibleApiKeys(newVisible);
   };
 
-  const generateApiKey = (env: string) => {
-    const prefix = `sk_${env}_`;
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    let result = prefix;
-    for (let i = 0; i < 32; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
+  const regenerateApiKey = async (service: Service) => {
+    try {
+      const updatedService = await servicesService.rotateApiKey(service.id);
+      if (updatedService.api_key_plaintext) {
+        setVisibleApiKeys(new Set([service.id.toString()]));
+      }
+      await loadServices();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to regenerate API key');
     }
-    return result;
-  };
-
-  const regenerateApiKey = (service: Service) => {
-    const newApiKey = generateApiKey(service.environment);
-    const updatedService = { ...service, apiKey: newApiKey };
-    handleSave(updatedService);
   };
 
   const getEnvironmentColor = (env: Service['environment']) => {
@@ -168,6 +157,23 @@ export default function ServicesPage() {
     navigator.clipboard.writeText(text);
   };
 
+  const handleDeleteService = async (serviceId: number) => {
+    try {
+      await servicesService.deleteService(serviceId);
+      await loadServices();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete service');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-muted-foreground">Loading services...</div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -182,6 +188,18 @@ export default function ServicesPage() {
         </Button>
       </div>
 
+      {/* Error Display */}
+      {error && (
+        <Card className="border-destructive">
+          <CardContent className="pt-6">
+            <p className="text-destructive">{error}</p>
+            <Button variant="outline" onClick={loadServices} className="mt-2">
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Services Table */}
       <Card>
         <CardHeader>
@@ -193,10 +211,10 @@ export default function ServicesPage() {
               <TableRow>
                 <TableHead>Service Name</TableHead>
                 <TableHead>Environment</TableHead>
-                <TableHead>Team</TableHead>
+                <TableHead>API Key</TableHead>
                 <TableHead>Workflows</TableHead>
                 <TableHead>Experts</TableHead>
-                <TableHead>Last Used</TableHead>
+                <TableHead>Segments</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -209,7 +227,21 @@ export default function ServicesPage() {
                       {service.environment.toUpperCase()}
                     </Badge>
                   </TableCell>
-                  <TableCell>{service.team}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center space-x-2">
+                      <span className="font-mono text-sm">...{service.api_key_last4}</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => toggleApiKeyVisibility(service.id)}
+                      >
+                        {visibleApiKeys.has(service.id.toString()) ? 
+                          <EyeOff className="h-4 w-4" /> : 
+                          <Eye className="h-4 w-4" />
+                        }
+                      </Button>
+                    </div>
+                  </TableCell>
                   <TableCell>
                     <Badge variant="secondary">{service.workflowCount}</Badge>
                   </TableCell>
@@ -217,16 +249,26 @@ export default function ServicesPage() {
                     <Badge variant="outline">{service.expertCount}</Badge>
                   </TableCell>
                   <TableCell>
-                    {service.lastUsed ? service.lastUsed.toLocaleDateString() : 'Never'}
+                    <Badge variant="outline">{service.segments.length}</Badge>
                   </TableCell>
                   <TableCell>
-                    <Button 
-                      variant="ghost" 
-                      size="sm"
-                      onClick={() => handleEdit(service)}
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
+                    <div className="flex space-x-1">
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => handleEdit(service)}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => handleDeleteService(service.id)}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        ×
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -258,9 +300,9 @@ export default function ServicesPage() {
                 setIsCreateModalOpen(false);
               }}
               onRegenerateApiKey={() => regenerateApiKey(editingService)}
-              visibleApiKey={visibleApiKeys.has(editingService.id)}
+              visibleApiKey={visibleApiKeys.has(editingService.id.toString())}
               onToggleApiKeyVisibility={() => toggleApiKeyVisibility(editingService.id)}
-              onCopyApiKey={() => copyToClipboard(editingService.apiKey)}
+              onCopyApiKey={() => copyToClipboard(editingService.api_key_plaintext || `...${editingService.api_key_last4}`)}
             />
           )}
         </DialogContent>
@@ -297,9 +339,9 @@ function ServiceForm({
 
   const addSegment = () => {
     const newSegment = {
+      id: 0,
+      service_id: formData.id,
       name: '',
-      type: 'custom' as const,
-      required: false
     };
     setFormData({
       ...formData,
@@ -307,7 +349,7 @@ function ServiceForm({
     });
   };
 
-  const updateSegment = (index: number, updates: Partial<typeof formData.segments[0]>) => {
+  const updateSegment = (index: number, updates: Partial<ServiceSegment>) => {
     const newSegments = [...formData.segments];
     newSegments[index] = { ...newSegments[index], ...updates };
     setFormData({ ...formData, segments: newSegments });
@@ -318,7 +360,10 @@ function ServiceForm({
     setFormData({ ...formData, segments: newSegments });
   };
 
-  const maskedApiKey = formData.apiKey.replace(/(.{12}).*(.{4})/, '$1...$2');
+  const apiKeyDisplay = formData.api_key_plaintext || `...${formData.api_key_last4}`;
+  const maskedApiKey = formData.api_key_plaintext ? 
+    formData.api_key_plaintext.replace(/(.{12}).*(.{4})/, '$1...$2') : 
+    `...${formData.api_key_last4}`;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -351,43 +396,45 @@ function ServiceForm({
         </div>
       </div>
 
-      <div>
-        <Label>API Key</Label>
-        <div className="flex items-center space-x-2 mt-1">
-          <Input
-            value={visibleApiKey ? formData.apiKey : maskedApiKey}
-            readOnly
-            className="font-mono text-sm"
-          />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={onToggleApiKeyVisibility}
-          >
-            {visibleApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={onCopyApiKey}
-          >
-            <Copy className="h-4 w-4" />
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={onRegenerateApiKey}
-          >
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
-        <p className="text-xs text-muted-foreground mt-1">
-          Use this API key to authenticate requests from your service
-        </p>
-      </div>
+              {formData.id > 0 && (
+          <div>
+            <Label>API Key</Label>
+            <div className="flex items-center space-x-2 mt-1">
+              <Input
+                value={visibleApiKey ? apiKeyDisplay : maskedApiKey}
+                readOnly
+                className="font-mono text-sm"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onToggleApiKeyVisibility}
+              >
+                {visibleApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onCopyApiKey}
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onRegenerateApiKey}
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Use this API key to authenticate requests from your service
+            </p>
+          </div>
+        )}
 
       <div>
         <div className="flex items-center justify-between mb-3">
@@ -401,9 +448,9 @@ function ServiceForm({
         <div className="space-y-3">
           {formData.segments.map((segment, index) => (
             <div key={index} className="p-3 border rounded-md space-y-2">
-              <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <Label className="text-sm">Name</Label>
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <Label className="text-sm">Segment Name</Label>
                   <Input
                     value={segment.name}
                     onChange={(e) => updateSegment(index, { name: e.target.value })}
@@ -412,52 +459,21 @@ function ServiceForm({
                   />
                 </div>
                 
-                <div>
-                  <Label className="text-sm">Type</Label>
-                  <Select 
-                    value={segment.type} 
-                    onValueChange={(value) => updateSegment(index, { type: value as typeof segment.type })}
+                {formData.segments.length > 0 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeSegment(index)}
+                    className="text-destructive hover:text-destructive ml-2"
                   >
-                    <SelectTrigger className="text-sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="user_id">User ID</SelectItem>
-                      <SelectItem value="client_id">Client ID</SelectItem>
-                      <SelectItem value="custom">Custom</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      checked={segment.required}
-                      onChange={(e) => updateSegment(index, { required: e.target.checked })}
-                      className="h-4 w-4"
-                    />
-                    <Label className="text-sm">Required</Label>
-                  </div>
-                  
-                  {formData.segments.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => removeSegment(index)}
-                      className="text-destructive hover:text-destructive"
-                    >
-                      Remove
-                    </Button>
-                  )}
-                </div>
+                    Remove
+                  </Button>
+                )}
               </div>
               
               <p className="text-xs text-muted-foreground">
-                {segment.type === 'user_id' && 'Standard user identifier for your service'}
-                {segment.type === 'client_id' && 'Client-specific identifier for multi-tenant services'}
-                {segment.type === 'custom' && 'Custom segment for specialized use cases'}
+                Segments help organize and isolate data from your service
               </p>
             </div>
           ))}
@@ -473,7 +489,7 @@ function ServiceForm({
           Cancel
         </Button>
         <Button type="submit">
-          {service.id ? 'Update Service' : 'Register Service'}
+          {service.id > 0 ? 'Update Service' : 'Register Service'}
         </Button>
       </div>
     </form>

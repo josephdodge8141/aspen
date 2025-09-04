@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -25,60 +25,9 @@ import {
   Archive, 
   Plus 
 } from 'lucide-react';
+import { workflowsService, type Workflow as BackendWorkflow } from '../services';
 
-interface Workflow {
-  id: string;
-  name: string;
-  description: string;
-  experts: string[];
-  team: string;
-  services: string[];
-  trigger: 'api' | 'cron' | 'both';
-  cronSchedule?: string;
-  apiUrl?: string;
-  retryCount: number;
-  status: 'active' | 'inactive' | 'draft';
-}
-
-const mockWorkflows: Workflow[] = [
-  {
-    id: '1',
-    name: 'Code Review Pipeline',
-    description: 'Automated code review process that analyzes pull requests, checks for best practices, and provides feedback.',
-    experts: ['Code Review Assistant', 'Security Analyzer'],
-    team: 'Engineering',
-    services: ['github-integration', 'slack-notifications'],
-    trigger: 'api',
-    apiUrl: '/api/workflows/code-review',
-    retryCount: 3,
-    status: 'active'
-  },
-  {
-    id: '2',
-    name: 'Content Creation Workflow',
-    description: 'End-to-end content creation pipeline from research to publication.',
-    experts: ['Content Strategist', 'SEO Optimizer'],
-    team: 'Marketing',
-    services: ['wordpress-integration', 'analytics-tracker'],
-    trigger: 'both',
-    cronSchedule: '0 9 * * 1',
-    apiUrl: '/api/workflows/content-creation',
-    retryCount: 2,
-    status: 'active'
-  },
-  {
-    id: '3',
-    name: 'Customer Support Triage',
-    description: 'Automatically categorize and route customer support tickets based on content analysis.',
-    experts: ['Support Classifier'],
-    team: 'Support',
-    services: ['zendesk-integration'],
-    trigger: 'api',
-    apiUrl: '/api/workflows/support-triage',
-    retryCount: 1,
-    status: 'draft'
-  }
-];
+interface Workflow extends BackendWorkflow {}
 
 interface WorkflowsPageProps {
   onEdit: (workflowId: string) => void;
@@ -86,46 +35,62 @@ interface WorkflowsPageProps {
 }
 
 export default function WorkflowsPage({ onEdit, onCreate }: WorkflowsPageProps) {
-  const [workflows, setWorkflows] = useState<Workflow[]>(mockWorkflows);
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const toggleRow = (workflowId: string) => {
+  useEffect(() => {
+    loadWorkflows();
+  }, []);
+
+  const loadWorkflows = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await workflowsService.listWorkflows();
+      setWorkflows(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load workflows');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleRow = (workflowId: number) => {
+    const workflowIdStr = workflowId.toString();
     const newExpanded = new Set(expandedRows);
-    if (newExpanded.has(workflowId)) {
-      newExpanded.delete(workflowId);
+    if (newExpanded.has(workflowIdStr)) {
+      newExpanded.delete(workflowIdStr);
     } else {
-      newExpanded.add(workflowId);
+      newExpanded.add(workflowIdStr);
     }
     setExpandedRows(newExpanded);
   };
 
-  const getStatusColor = (status: Workflow['status']) => {
-    switch (status) {
-      case 'active':
-        return 'bg-green-100 text-green-800';
-      case 'inactive':
-        return 'bg-gray-100 text-gray-800';
-      case 'draft':
-        return 'bg-yellow-100 text-yellow-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
+  // Removed getStatusColor since workflows no longer have status field
 
-  const getTriggerDisplay = (workflow: Workflow) => {
-    if (workflow.trigger === 'both') {
-      return `API + CRON (${workflow.cronSchedule})`;
-    } else if (workflow.trigger === 'cron') {
-      return `CRON (${workflow.cronSchedule})`;
-    } else {
-      return 'API';
-    }
-  };
-
-  const handleExecute = (workflowId: string) => {
+  const handleExecute = (workflowId: number) => {
     // This would navigate to chat page with workflow selected
     console.log('Execute workflow:', workflowId);
   };
+
+  const handleDeleteWorkflow = async (workflowId: number) => {
+    try {
+      await workflowsService.deleteWorkflow(workflowId);
+      await loadWorkflows();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete workflow');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-muted-foreground">Loading workflows...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -140,6 +105,18 @@ export default function WorkflowsPage({ onEdit, onCreate }: WorkflowsPageProps) 
           Create Workflow
         </Button>
       </div>
+
+      {/* Error Display */}
+      {error && (
+        <Card className="border-destructive">
+          <CardContent className="pt-6">
+            <p className="text-destructive">{error}</p>
+            <Button variant="outline" onClick={loadWorkflows} className="mt-2">
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Workflows Table */}
       <Card>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   MessageSquare, 
   Users, 
@@ -17,6 +17,9 @@ import DashboardPage from './components/DashboardPage';
 import TeamsPage from './components/TeamsPage';
 import ServicesPage from './components/ServicesPage';
 import WorkflowEditor from './components/WorkflowEditor';
+import LoginForm from './components/LoginForm';
+import UserProfile from './components/UserProfile';
+import { authService } from './services';
 
 type Page = 'experts' | 'workflows' | 'chat' | 'dashboard' | 'teams' | 'services' | 'workflow-editor';
 
@@ -33,6 +36,33 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>('experts');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [editingWorkflow, setEditingWorkflow] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  useEffect(() => {
+    // Initialize auth on app start
+    authService.initializeAuth();
+    
+    // Try to use environment variable token first
+    if (!authService.isAuthenticated()) {
+      const hasEnvToken = authService.initializeWithEnvToken();
+      
+      if (hasEnvToken) {
+        setIsAuthenticated(true);
+      }
+      // Don't auto-set dummy token anymore - show login form instead
+    } else {
+      setIsAuthenticated(true);
+    }
+  }, []);
+
+  const handleLogin = () => {
+    setIsAuthenticated(true);
+  };
+
+  // Show login form if not authenticated
+  if (!isAuthenticated) {
+    return <LoginForm onLogin={handleLogin} />;
+  }
 
   const handleEditWorkflow = (workflowId: string) => {
     setEditingWorkflow(workflowId);
@@ -136,6 +166,7 @@ export default function App() {
               {currentPage === 'workflow-editor' ? 'Workflow Editor' : currentPage}
             </h2>
           </div>
+          <UserProfile />
         </div>
 
         {/* Page Content */}

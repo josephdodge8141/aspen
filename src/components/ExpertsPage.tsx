@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -30,56 +30,42 @@ import {
   Archive, 
   Plus 
 } from 'lucide-react';
+import { expertsService, type Expert as BackendExpert } from '../services';
 
-interface Expert {
-  id: string;
-  name: string;
-  prompt: string;
-  truncatedPrompt: string;
-  workflows: string[];
-  team: string;
-  services: string[];
-  model: string;
-  inputParams: string;
-}
-
-const mockExperts: Expert[] = [
-  {
-    id: '1',
-    name: 'Code Review Assistant',
-    prompt: 'You are a senior software engineer specializing in code reviews. Analyze the provided code for best practices, potential bugs, security issues, and performance improvements. Provide constructive feedback with specific suggestions.',
-    truncatedPrompt: 'You are a senior software engineer specializing in code reviews...',
-    workflows: ['code-analysis', 'security-scan'],
-    team: 'Engineering',
-    services: ['github-integration', 'slack-notifications'],
-    model: 'gpt-4',
-    inputParams: '{"code": "string", "language": "string", "context": "object"}'
-  },
-  {
-    id: '2',
-    name: 'Content Strategist',
-    prompt: 'You are an expert content strategist with deep knowledge of SEO, audience engagement, and brand voice. Help create compelling content that aligns with business objectives and resonates with target audiences.',
-    truncatedPrompt: 'You are an expert content strategist with deep knowledge...',
-    workflows: ['content-generation', 'seo-optimization'],
-    team: 'Marketing',
-    services: ['wordpress-integration'],
-    model: 'gpt-4',
-    inputParams: '{"topic": "string", "audience": "string", "tone": "string"}'
-  }
-];
+interface Expert extends BackendExpert {}
 
 export default function ExpertsPage() {
-  const [experts, setExperts] = useState<Expert[]>(mockExperts);
+  const [experts, setExperts] = useState<Expert[]>([]);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [editingExpert, setEditingExpert] = useState<Expert | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const toggleRow = (expertId: string) => {
+  useEffect(() => {
+    loadExperts();
+  }, []);
+
+  const loadExperts = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const backendExperts = await expertsService.listExperts();
+      setExperts(backendExperts);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load experts');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleRow = (expertId: number) => {
+    const expertIdStr = expertId.toString();
     const newExpanded = new Set(expandedRows);
-    if (newExpanded.has(expertId)) {
-      newExpanded.delete(expertId);
+    if (newExpanded.has(expertIdStr)) {
+      newExpanded.delete(expertIdStr);
     } else {
-      newExpanded.add(expertId);
+      newExpanded.add(expertIdStr);
     }
     setExpandedRows(newExpanded);
   };
@@ -88,32 +74,64 @@ export default function ExpertsPage() {
     setEditingExpert(expert);
   };
 
-  const handleSave = (updatedExpert: Expert) => {
-    setExperts(experts.map(e => e.id === updatedExpert.id ? updatedExpert : e));
-    setEditingExpert(null);
+  const handleSave = async (updatedExpert: Expert) => {
+    try {
+      await expertsService.updateExpert(updatedExpert.id, {
+        name: updatedExpert.name,
+        model_name: updatedExpert.model_name,
+        team_id: updatedExpert.team_id,
+      });
+      await loadExperts();
+      setEditingExpert(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save expert');
+    }
   };
 
   const handleCreate = () => {
     const newExpert: Expert = {
-      id: Date.now().toString(),
+      id: 0,
       name: 'New Expert',
-      prompt: '',
-      truncatedPrompt: '',
-      workflows: [],
-      team: 'Default',
-      services: [],
-      model: 'gpt-4',
-      inputParams: '{}'
+      model_name: 'gpt-4',
+      status: 'active',
+      team_id: 1,
+      created_on: new Date().toISOString()
     };
     setEditingExpert(newExpert);
     setIsCreateModalOpen(true);
   };
 
-  const handleCreateSave = (newExpert: Expert) => {
-    setExperts([...experts, newExpert]);
-    setEditingExpert(null);
-    setIsCreateModalOpen(false);
+  const handleCreateSave = async (newExpert: Expert) => {
+    try {
+      await expertsService.createExpert({
+        name: newExpert.name,
+        model_name: newExpert.model_name,
+        team_id: newExpert.team_id,
+      });
+      await loadExperts();
+      setEditingExpert(null);
+      setIsCreateModalOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create expert');
+    }
   };
+
+  const handleDeleteExpert = async (expertId: number) => {
+    try {
+      await expertsService.deleteExpert(expertId);
+      await loadExperts();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete expert');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-muted-foreground">Loading experts...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -129,6 +147,18 @@ export default function ExpertsPage() {
         </Button>
       </div>
 
+      {/* Error Display */}
+      {error && (
+        <Card className="border-destructive">
+          <CardContent className="pt-6">
+            <p className="text-destructive">{error}</p>
+            <Button variant="outline" onClick={loadExperts} className="mt-2">
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Experts Table */}
       <Card>
         <CardHeader>
@@ -140,10 +170,10 @@ export default function ExpertsPage() {
               <TableRow>
                 <TableHead className="w-8"></TableHead>
                 <TableHead>Name</TableHead>
-                <TableHead>Prompt</TableHead>
-                <TableHead>Workflows</TableHead>
-                <TableHead>Team</TableHead>
-                <TableHead>Services</TableHead>
+                <TableHead>Model</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Team ID</TableHead>
+                <TableHead>Created</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -152,24 +182,26 @@ export default function ExpertsPage() {
                 <Collapsible key={expert.id} asChild>
                   <>
                     <CollapsibleTrigger asChild>
-                      <TableRow className="cursor-pointer">
+                      <TableRow className="cursor-pointer" onClick={() => toggleRow(expert.id)}>
                         <TableCell>
-                          {expandedRows.has(expert.id) ? (
+                          {expandedRows.has(expert.id.toString()) ? (
                             <ChevronDown className="h-4 w-4" />
                           ) : (
                             <ChevronRight className="h-4 w-4" />
                           )}
                         </TableCell>
                         <TableCell>{expert.name}</TableCell>
-                        <TableCell className="max-w-xs truncate">
-                          {expert.truncatedPrompt}
+                        <TableCell>
+                          <Badge variant="secondary">{expert.model_name}</Badge>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="secondary">{expert.workflows.length}</Badge>
+                          <Badge variant={expert.status === 'active' ? 'default' : 'secondary'}>
+                            {expert.status}
+                          </Badge>
                         </TableCell>
-                        <TableCell>{expert.team}</TableCell>
+                        <TableCell>{expert.team_id}</TableCell>
                         <TableCell>
-                          <Badge variant="outline">{expert.services.length}</Badge>
+                          {new Date(expert.created_on).toLocaleDateString()}
                         </TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           <div className="flex space-x-2">
@@ -183,7 +215,12 @@ export default function ExpertsPage() {
                             >
                               <Edit className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="sm">
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => handleDeleteExpert(expert.id)}
+                              className="text-destructive hover:text-destructive"
+                            >
                               <Archive className="h-4 w-4" />
                             </Button>
                           </div>
@@ -194,44 +231,26 @@ export default function ExpertsPage() {
                       <TableRow>
                         <TableCell colSpan={7}>
                           <div className="p-4 bg-muted/50 rounded-md space-y-4">
-                            <div>
-                              <Label>Full Prompt</Label>
-                              <p className="text-sm mt-1">{expert.prompt}</p>
-                            </div>
-                            
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                               <div>
-                                <Label>Workflows</Label>
-                                <ScrollArea className="h-24 mt-2">
-                                  <div className="space-y-1">
-                                    {expert.workflows.map((workflow) => (
-                                      <Badge key={workflow} variant="secondary" className="mr-1 mb-1">
-                                        {workflow}
-                                      </Badge>
-                                    ))}
-                                  </div>
-                                </ScrollArea>
+                                <Label>Model</Label>
+                                <p className="text-sm mt-1">{expert.model_name}</p>
                               </div>
                               
                               <div>
-                                <Label>Services</Label>
-                                <ScrollArea className="h-24 mt-2">
-                                  <div className="space-y-1">
-                                    {expert.services.map((service) => (
-                                      <Badge key={service} variant="outline" className="mr-1 mb-1">
-                                        {service}
-                                      </Badge>
-                                    ))}
-                                  </div>
-                                </ScrollArea>
+                                <Label>Status</Label>
+                                <p className="text-sm mt-1">{expert.status}</p>
+                              </div>
+                              
+                              <div>
+                                <Label>Team ID</Label>
+                                <p className="text-sm mt-1">{expert.team_id}</p>
                               </div>
                             </div>
                             
                             <div>
-                              <Label>Input Parameters</Label>
-                              <pre className="text-xs bg-background p-2 rounded mt-1 overflow-x-auto">
-                                {JSON.stringify(JSON.parse(expert.inputParams), null, 2)}
-                              </pre>
+                              <Label>Created On</Label>
+                              <p className="text-sm mt-1">{new Date(expert.created_on).toLocaleString()}</p>
                             </div>
                           </div>
                         </TableCell>
@@ -281,14 +300,7 @@ function ExpertForm({ expert, onSave, onCancel }: ExpertFormProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const truncatedPrompt = formData.prompt.length > 50 
-      ? formData.prompt.substring(0, 50) + '...'
-      : formData.prompt;
-    
-    onSave({
-      ...formData,
-      truncatedPrompt
-    });
+    onSave(formData);
   };
 
   return (
@@ -304,22 +316,10 @@ function ExpertForm({ expert, onSave, onCancel }: ExpertFormProps) {
       </div>
       
       <div>
-        <Label htmlFor="prompt">Prompt</Label>
-        <Textarea
-          id="prompt"
-          value={formData.prompt}
-          onChange={(e) => setFormData({ ...formData, prompt: e.target.value })}
-          rows={6}
-          placeholder="Enter your expert prompt here. Use {{base.time}} for base parameters and {{input.property}} for input parameters."
-          required
-        />
-      </div>
-      
-      <div>
         <Label htmlFor="model">Model</Label>
         <Select 
-          value={formData.model} 
-          onValueChange={(value) => setFormData({ ...formData, model: value })}
+          value={formData.model_name} 
+          onValueChange={(value) => setFormData({ ...formData, model_name: value })}
         >
           <SelectTrigger>
             <SelectValue />
@@ -334,13 +334,12 @@ function ExpertForm({ expert, onSave, onCancel }: ExpertFormProps) {
       </div>
       
       <div>
-        <Label htmlFor="inputParams">Input Parameters (JSON)</Label>
-        <Textarea
-          id="inputParams"
-          value={formData.inputParams}
-          onChange={(e) => setFormData({ ...formData, inputParams: e.target.value })}
-          rows={4}
-          placeholder='{"param1": "string", "param2": "object"}'
+        <Label htmlFor="team_id">Team ID</Label>
+        <Input
+          id="team_id"
+          type="number"
+          value={formData.team_id}
+          onChange={(e) => setFormData({ ...formData, team_id: parseInt(e.target.value) || 1 })}
           required
         />
       </div>

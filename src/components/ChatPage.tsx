@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -21,6 +21,13 @@ import {
   Pause,
   RotateCw
 } from 'lucide-react';
+import { 
+  expertsService, 
+  workflowsService, 
+  chatService, 
+  type Expert as BackendExpert, 
+  type Workflow as BackendWorkflow 
+} from '../services';
 
 interface Message {
   id: string;
@@ -29,45 +36,8 @@ interface Message {
   timestamp: Date;
 }
 
-interface Expert {
-  id: string;
-  name: string;
-  prompt: string;
-  workflows: string[];
-  model: string;
-  inputParams: string;
-}
-
-interface Workflow {
-  id: string;
-  name: string;
-  description: string;
-  status: 'idle' | 'running' | 'completed' | 'error';
-}
-
-const mockExperts: Expert[] = [
-  {
-    id: '1',
-    name: 'Code Review Assistant',
-    prompt: 'You are a senior software engineer specializing in code reviews. Current time: {{base.time}}. Analyze the following code: {{input.code}}',
-    workflows: ['code-analysis', 'security-scan'],
-    model: 'gpt-4',
-    inputParams: '{"code": "string", "language": "string", "context": "object"}'
-  },
-  {
-    id: '2',
-    name: 'Content Strategist',
-    prompt: 'You are an expert content strategist. Today is {{base.time}}. Create content for: {{input.topic}} targeting {{input.audience}}',
-    workflows: ['content-generation', 'seo-optimization'],
-    model: 'gpt-4',
-    inputParams: '{"topic": "string", "audience": "string", "tone": "string"}'
-  }
-];
-
-const mockWorkflows: Workflow[] = [
-  { id: '1', name: 'Code Review Pipeline', description: 'Automated code review process', status: 'idle' },
-  { id: '2', name: 'Content Creation Workflow', description: 'End-to-end content creation', status: 'idle' }
-];
+interface Expert extends BackendExpert {}
+interface Workflow extends BackendWorkflow {}
 
 export default function ChatPage() {
   const [mode, setMode] = useState<'expert' | 'workflow'>('expert');
@@ -76,20 +46,46 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentMessage, setCurrentMessage] = useState('');
   const [workflowInputs, setWorkflowInputs] = useState('{}');
-  const [activeWorkflows, setActiveWorkflows] = useState<Set<string>>(new Set());
   const [expertPrompt, setExpertPrompt] = useState('');
   const [inputParams, setInputParams] = useState('{}');
   const [workflowLog, setWorkflowLog] = useState<Array<{step: string, data: any, timestamp: Date}>>([]);
+  const [experts, setExperts] = useState<Expert[]>([]);
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const [expertsData, workflowsData] = await Promise.all([
+        expertsService.listExperts(),
+        workflowsService.listWorkflows()
+      ]);
+      setExperts(expertsData);
+      setWorkflows(workflowsData);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load data');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Initialize expert prompt when expert is selected
   React.useEffect(() => {
     if (selectedExpert) {
-      setExpertPrompt(selectedExpert.prompt);
-      setInputParams(selectedExpert.inputParams);
+      // Since experts from the list don't have prompt/input_params, 
+      // we'll use placeholder values or fetch detailed expert info
+      setExpertPrompt(`Expert: ${selectedExpert.name} (${selectedExpert.model_name})`);
+      setInputParams('{"user_message": "string"}');
     }
   }, [selectedExpert]);
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!currentMessage.trim() || (!selectedExpert && mode === 'expert')) return;
 
     const userMessage: Message = {
@@ -100,24 +96,42 @@ export default function ChatPage() {
     };
 
     setMessages(prev => [...prev, userMessage]);
+    setCurrentMessage('');
 
-    // Simulate AI response
-    setTimeout(() => {
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        type: 'assistant',
-        content: mode === 'expert' 
-          ? `I've analyzed your request using the ${selectedExpert?.name} expert. Here's my response based on the prompt configuration...`
-          : `Workflow execution completed. Here are the results from the ${selectedWorkflow?.name} workflow...`,
+    try {
+      if (mode === 'expert' && selectedExpert) {
+        const inputParamsObj = JSON.parse(inputParams);
+        const response = await chatService.runExpert({
+          expert_id: selectedExpert.id,
+          input_params: inputParamsObj,
+          base: { time: new Date().toISOString() }
+        });
+
+        // Add assistant messages from the response
+        response.messages.forEach((msg, index) => {
+          if (msg.role === 'assistant') {
+            const assistantMessage: Message = {
+              id: (Date.now() + index).toString(),
+              type: 'assistant',
+              content: msg.content,
+              timestamp: new Date()
+            };
+            setMessages(prev => [...prev, assistantMessage]);
+          }
+        });
+      }
+    } catch (err) {
+      const errorMessage: Message = {
+        id: (Date.now() + 999).toString(),
+        type: 'system',
+        content: `Error: ${err instanceof Error ? err.message : 'Failed to process request'}`,
         timestamp: new Date()
       };
-      setMessages(prev => [...prev, assistantMessage]);
-    }, 1500);
-
-    setCurrentMessage('');
+      setMessages(prev => [...prev, errorMessage]);
+    }
   };
 
-  const handleExecuteWorkflow = () => {
+  const handleExecuteWorkflow = async () => {
     if (!selectedWorkflow) return;
 
     // Add system message about workflow execution
@@ -129,37 +143,44 @@ export default function ChatPage() {
     };
 
     setMessages(prev => [...prev, systemMessage]);
-
-    // Simulate workflow execution with log entries
-    const steps = [
-      'Initializing workflow...',
-      'Processing input data...',
-      'Executing AI analysis...',
-      'Gathering results...',
-      'Workflow completed'
-    ];
-
     setWorkflowLog([]);
-    
-    steps.forEach((step, index) => {
-      setTimeout(() => {
-        setWorkflowLog(prev => [...prev, {
-          step,
-          data: { step: index + 1, total: steps.length },
-          timestamp: new Date()
-        }]);
 
-        if (index === steps.length - 1) {
-          const resultMessage: Message = {
-            id: (Date.now() + index).toString(),
-            type: 'assistant',
-            content: `Workflow "${selectedWorkflow.name}" completed successfully. Results are available in the workflow log.`,
+    try {
+      const inputsObj = JSON.parse(workflowInputs);
+      const response = await chatService.runWorkflow({
+        workflow_id: selectedWorkflow.id,
+        starting_inputs: inputsObj
+      });
+
+      // Log each step
+      response.steps.forEach((step, index) => {
+        setTimeout(() => {
+          setWorkflowLog(prev => [...prev, {
+            step: `Node ${step.node_id} (${step.node_type}): ${step.status}`,
+            data: { inputs: step.inputs, outputs: step.outputs },
             timestamp: new Date()
-          };
-          setMessages(prev => [...prev, resultMessage]);
-        }
-      }, (index + 1) * 1000);
-    });
+          }]);
+
+          if (index === response.steps.length - 1) {
+            const resultMessage: Message = {
+              id: (Date.now() + index).toString(),
+              type: 'assistant',
+              content: `Workflow "${selectedWorkflow.name}" completed successfully. Run ID: ${response.run_id}`,
+              timestamp: new Date()
+            };
+            setMessages(prev => [...prev, resultMessage]);
+          }
+        }, index * 500);
+      });
+    } catch (err) {
+      const errorMessage: Message = {
+        id: (Date.now() + 999).toString(),
+        type: 'system',
+        content: `Workflow Error: ${err instanceof Error ? err.message : 'Failed to execute workflow'}`,
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    }
   };
 
   const handleSaveExpert = () => {
@@ -167,34 +188,56 @@ export default function ChatPage() {
     console.log('Saving expert with prompt:', expertPrompt);
   };
 
-  const handleSaveAsCopy = () => {
-    // This would create a new expert based on the current configuration
-    console.log('Saving as copy with prompt:', expertPrompt);
-  };
-
-  const toggleWorkflow = (workflowId: string) => {
-    const newActive = new Set(activeWorkflows);
-    if (newActive.has(workflowId)) {
-      newActive.delete(workflowId);
-    } else {
-      newActive.add(workflowId);
+  const handleSaveAsCopy = async () => {
+    if (!selectedExpert) return;
+    
+    try {
+      const inputParamsObj = JSON.parse(inputParams);
+      await expertsService.createExpert({
+        name: `${selectedExpert.name} (Copy)`,
+        prompt: expertPrompt,
+        model_name: selectedExpert.model_name,
+        input_params: inputParamsObj,
+      });
+      
+      // Reload experts to show the new copy
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save expert copy');
     }
-    setActiveWorkflows(newActive);
   };
 
-  return (
-    <div className="flex h-full">
-      {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col">
-        {/* Mode Selection */}
-        <div className="p-4 border-b">
-          <Tabs value={mode} onValueChange={(value) => setMode(value as 'expert' | 'workflow')}>
-            <TabsList>
-              <TabsTrigger value="expert">Expert Mode</TabsTrigger>
-              <TabsTrigger value="workflow">Workflow Mode</TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </div>
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-muted-foreground">Loading data...</div>
+      </div>
+    );
+  }
+
+      return (
+      <div className="flex h-full">
+        {/* Main Chat Area */}
+        <div className="flex-1 flex flex-col">
+          {/* Error Display */}
+          {error && (
+            <div className="p-4 bg-destructive/10 border-b border-destructive/20">
+              <p className="text-destructive text-sm">{error}</p>
+              <Button variant="outline" size="sm" onClick={loadData} className="mt-2">
+                Retry
+              </Button>
+            </div>
+          )}
+
+          {/* Mode Selection */}
+          <div className="p-4 border-b">
+            <Tabs value={mode} onValueChange={(value) => setMode(value as 'expert' | 'workflow')}>
+              <TabsList>
+                <TabsTrigger value="expert">Expert Mode</TabsTrigger>
+                <TabsTrigger value="workflow">Workflow Mode</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
 
         {/* Expert/Workflow Selection */}
         <div className="p-4 border-b bg-muted/30">
@@ -203,9 +246,9 @@ export default function ChatPage() {
               <div>
                 <Label>Select Expert</Label>
                 <Select
-                  value={selectedExpert?.id || ''}
+                  value={selectedExpert?.id.toString() || ''}
                   onValueChange={(value) => {
-                    const expert = mockExperts.find(e => e.id === value);
+                    const expert = experts.find(e => e.id.toString() === value);
                     setSelectedExpert(expert || null);
                   }}
                 >
@@ -213,8 +256,8 @@ export default function ChatPage() {
                     <SelectValue placeholder="Choose an expert..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {mockExperts.map((expert) => (
-                      <SelectItem key={expert.id} value={expert.id}>
+                    {experts.map((expert) => (
+                      <SelectItem key={expert.id} value={expert.id.toString()}>
                         {expert.name}
                       </SelectItem>
                     ))}
@@ -222,19 +265,11 @@ export default function ChatPage() {
                 </Select>
               </div>
 
-              {selectedExpert && selectedExpert.workflows.length > 0 && (
+              {selectedExpert && (
                 <div>
-                  <Label>Attached Workflows</Label>
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {selectedExpert.workflows.map((workflow) => (
-                      <div key={workflow} className="flex items-center space-x-2">
-                        <Checkbox
-                          checked={activeWorkflows.has(workflow)}
-                          onCheckedChange={() => toggleWorkflow(workflow)}
-                        />
-                        <Badge variant="outline">{workflow}</Badge>
-                      </div>
-                    ))}
+                  <Label>Expert Model</Label>
+                  <div className="mt-2">
+                    <Badge variant="secondary">{selectedExpert.model_name}</Badge>
                   </div>
                 </div>
               )}
@@ -243,9 +278,9 @@ export default function ChatPage() {
             <div>
               <Label>Select Workflow</Label>
               <Select
-                value={selectedWorkflow?.id || ''}
+                value={selectedWorkflow?.id.toString() || ''}
                 onValueChange={(value) => {
-                  const workflow = mockWorkflows.find(w => w.id === value);
+                  const workflow = workflows.find(w => w.id.toString() === value);
                   setSelectedWorkflow(workflow || null);
                 }}
               >
@@ -253,8 +288,8 @@ export default function ChatPage() {
                   <SelectValue placeholder="Choose a workflow..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {mockWorkflows.map((workflow) => (
-                    <SelectItem key={workflow.id} value={workflow.id}>
+                  {workflows.map((workflow) => (
+                    <SelectItem key={workflow.id} value={workflow.id.toString()}>
                       {workflow.name}
                     </SelectItem>
                   ))}

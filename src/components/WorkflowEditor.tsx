@@ -41,6 +41,14 @@ interface WorkflowNode {
   connections: string[];
 }
 
+interface NodeConnection {
+  id: string;
+  fromNode: string;
+  toNode: string;
+  fromPort: 'top' | 'right' | 'bottom' | 'left';
+  toPort: 'top' | 'right' | 'bottom' | 'left';
+}
+
 interface WorkflowEditorProps {
   workflowId: string | null;
   onBack: () => void;
@@ -83,11 +91,15 @@ export default function WorkflowEditor({ workflowId, onBack }: WorkflowEditorPro
   });
 
   const [nodes, setNodes] = useState<WorkflowNode[]>([]);
+  const [connections, setConnections] = useState<NodeConnection[]>([]);
   const [showNodeModal, setShowNodeModal] = useState(false);
   const [selectedNodeType, setSelectedNodeType] = useState<{category: string, type: string} | null>(null);
   const [editingNode, setEditingNode] = useState<WorkflowNode | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState<string | null>(null);
+  const [isConnecting, setIsConnecting] = useState<{nodeId: string, port: 'top' | 'right' | 'bottom' | 'left'} | null>(null);
+  const [tempConnection, setTempConnection] = useState<{fromNode: string, fromPort: 'top' | 'right' | 'bottom' | 'left', fromX: number, fromY: number, toX: number, toY: number} | null>(null);
 
   const handleAddNode = () => {
     setShowNodeModal(true);
@@ -114,7 +126,142 @@ export default function WorkflowEditor({ workflowId, onBack }: WorkflowEditorPro
   };
 
   const handleNodeClick = (node: WorkflowNode) => {
-    setEditingNode(node);
+    if (!isDragging) {
+      setEditingNode(node);
+    }
+  };
+
+  const handleMouseDown = (e: React.MouseEvent, node: WorkflowNode) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    
+    const offsetX = e.clientX - rect.left - node.x;
+    const offsetY = e.clientY - rect.top - node.y;
+    
+    setDragOffset({ x: offsetX, y: offsetY });
+    setIsDragging(node.id);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging) return;
+    
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    
+    const newX = e.clientX - rect.left - dragOffset.x;
+    const newY = e.clientY - rect.top - dragOffset.y;
+    
+    setNodes(nodes.map(node => 
+      node.id === isDragging 
+        ? { ...node, x: Math.max(50, Math.min(rect.width - 50, newX)), y: Math.max(50, Math.min(rect.height - 50, newY)) }
+        : node
+    ));
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(null);
+  };
+
+  const handleConnectionStart = (nodeId: string, port: 'top' | 'right' | 'bottom' | 'left', e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsConnecting({ nodeId, port });
+    
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    
+    const node = nodes.find(n => n.id === nodeId);
+    if (!node) return;
+    
+    const portOffset = getPortPosition(port);
+    setTempConnection({
+      fromNode: nodeId,
+      fromPort: port,
+      fromX: node.x + portOffset.x,
+      fromY: node.y + portOffset.y,
+      toX: node.x + portOffset.x,
+      toY: node.y + portOffset.y
+    });
+  };
+
+  const handleConnectionEnd = (nodeId: string, port: 'top' | 'right' | 'bottom' | 'left') => {
+    if (!isConnecting || isConnecting.nodeId === nodeId) {
+      setIsConnecting(null);
+      setTempConnection(null);
+      return;
+    }
+    
+    const newConnection: NodeConnection = {
+      id: `${isConnecting.nodeId}-${nodeId}-${Date.now()}`,
+      fromNode: isConnecting.nodeId,
+      toNode: nodeId,
+      fromPort: isConnecting.port,
+      toPort: port
+    };
+    
+    setConnections([...connections, newConnection]);
+    setIsConnecting(null);
+    setTempConnection(null);
+  };
+
+  const getPortPosition = (port: 'top' | 'right' | 'bottom' | 'left') => {
+    switch (port) {
+      case 'top': return { x: 0, y: -64 };
+      case 'right': return { x: 64, y: 0 };
+      case 'bottom': return { x: 0, y: 64 };
+      case 'left': return { x: -64, y: 0 };
+    }
+  };
+
+  const handleCanvasMouseMove = (e: React.MouseEvent) => {
+    handleMouseMove(e);
+    
+    if (tempConnection) {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      
+      setTempConnection({
+        ...tempConnection,
+        toX: e.clientX - rect.left,
+        toY: e.clientY - rect.top
+      });
+    }
+  };
+
+  const handleCanvasMouseUp = (e: React.MouseEvent) => {
+    handleMouseUp();
+    setIsConnecting(null);
+    setTempConnection(null);
+  };
+
+  const renderConnection = (connection: NodeConnection) => {
+    const fromNode = nodes.find(n => n.id === connection.fromNode);
+    const toNode = nodes.find(n => n.id === connection.toNode);
+    
+    if (!fromNode || !toNode) return null;
+    
+    const fromPortPos = getPortPosition(connection.fromPort);
+    const toPortPos = getPortPosition(connection.toPort);
+    
+    const fromX = fromNode.x + fromPortPos.x;
+    const fromY = fromNode.y + fromPortPos.y;
+    const toX = toNode.x + toPortPos.x;
+    const toY = toNode.y + toPortPos.y;
+    
+    return (
+      <line
+        key={connection.id}
+        x1={fromX}
+        y1={fromY}
+        x2={toX}
+        y2={toY}
+        stroke="#6366f1"
+        strokeWidth="2"
+        markerEnd="url(#arrowhead)"
+      />
+    );
   };
 
   const handleNodeConfigSave = (config: Record<string, any>) => {
@@ -254,7 +401,45 @@ export default function WorkflowEditor({ workflowId, onBack }: WorkflowEditorPro
             ref={canvasRef}
             className="w-full h-full relative"
             style={{ backgroundImage: 'radial-gradient(circle, #ccc 1px, transparent 1px)', backgroundSize: '20px 20px' }}
+            onMouseMove={handleCanvasMouseMove}
+            onMouseUp={handleCanvasMouseUp}
+            onMouseLeave={handleCanvasMouseUp}
           >
+            {/* SVG for connections */}
+            <svg className="absolute inset-0 w-full h-full pointer-events-none">
+              <defs>
+                <marker
+                  id="arrowhead"
+                  markerWidth="10"
+                  markerHeight="7"
+                  refX="10"
+                  refY="3.5"
+                  orient="auto"
+                >
+                  <polygon
+                    points="0 0, 10 3.5, 0 7"
+                    fill="#6366f1"
+                  />
+                </marker>
+              </defs>
+              
+              {/* Render all connections */}
+              {connections.map(renderConnection)}
+              
+              {/* Render temporary connection while dragging */}
+              {tempConnection && (
+                <line
+                  x1={tempConnection.fromX}
+                  y1={tempConnection.fromY}
+                  x2={tempConnection.toX}
+                  y2={tempConnection.toY}
+                  stroke="#6366f1"
+                  strokeWidth="2"
+                  strokeDasharray="5,5"
+                  opacity="0.7"
+                />
+              )}
+            </svg>
             {/* Add Node Button */}
             {nodes.length === 0 && (
               <div className="absolute inset-0 flex items-center justify-center">
@@ -271,14 +456,51 @@ export default function WorkflowEditor({ workflowId, onBack }: WorkflowEditorPro
               return (
                 <div
                   key={node.id}
-                  className={`absolute cursor-pointer transform -translate-x-1/2 -translate-y-1/2 ${getNodeColor(node.type)}`}
+                  className={`absolute transform -translate-x-1/2 -translate-y-1/2 ${getNodeColor(node.type)} ${isDragging === node.id ? 'z-50 scale-105' : ''}`}
                   style={{ left: node.x, top: node.y }}
-                  onClick={() => handleNodeClick(node)}
                 >
-                  <Card className="w-32 shadow-md hover:shadow-lg transition-shadow">
-                    <CardContent className="p-3 text-center">
+                  <Card 
+                    className={`w-32 shadow-md transition-all ${isDragging === node.id ? 'shadow-lg' : 'hover:shadow-lg'}`}
+                    onMouseDown={(e) => handleMouseDown(e, node)}
+                    onClick={() => handleNodeClick(node)}
+                  >
+                    <CardContent className="p-3 text-center relative cursor-move">
                       <Icon className="h-6 w-6 mx-auto mb-2" />
                       <p className="text-xs truncate">{node.name}</p>
+                      
+                      {/* Connection ports */}
+                      <div
+                        className="absolute -top-2 left-1/2 transform -translate-x-1/2 w-4 h-4 bg-blue-500 rounded-full border-2 border-white cursor-pointer hover:bg-blue-600 pointer-events-auto"
+                        onMouseDown={(e) => handleConnectionStart(node.id, 'top', e)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (isConnecting) handleConnectionEnd(node.id, 'top');
+                        }}
+                      />
+                      <div
+                        className="absolute top-1/2 -right-2 transform -translate-y-1/2 w-4 h-4 bg-blue-500 rounded-full border-2 border-white cursor-pointer hover:bg-blue-600 pointer-events-auto"
+                        onMouseDown={(e) => handleConnectionStart(node.id, 'right', e)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (isConnecting) handleConnectionEnd(node.id, 'right');
+                        }}
+                      />
+                      <div
+                        className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 w-4 h-4 bg-blue-500 rounded-full border-2 border-white cursor-pointer hover:bg-blue-600 pointer-events-auto"
+                        onMouseDown={(e) => handleConnectionStart(node.id, 'bottom', e)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (isConnecting) handleConnectionEnd(node.id, 'bottom');
+                        }}
+                      />
+                      <div
+                        className="absolute top-1/2 -left-2 transform -translate-y-1/2 w-4 h-4 bg-blue-500 rounded-full border-2 border-white cursor-pointer hover:bg-blue-600 pointer-events-auto"
+                        onMouseDown={(e) => handleConnectionStart(node.id, 'left', e)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (isConnecting) handleConnectionEnd(node.id, 'left');
+                        }}
+                      />
                     </CardContent>
                   </Card>
                 </div>

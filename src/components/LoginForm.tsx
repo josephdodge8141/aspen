@@ -26,13 +26,12 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
     confirmPassword: ''
   });
   
-  // JWT token form state
-  const [token, setToken] = useState('');
-  
   // UI state
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('login');
+
+
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -109,27 +108,7 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
     }
   };
 
-  const handleTokenSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!token.trim()) {
-      setError('Please enter a JWT token');
-      return;
-    }
 
-    try {
-      authService.setToken(token.trim());
-      setError('');
-      onLogin();
-    } catch (err) {
-      setError('Invalid token format');
-    }
-  };
-
-  const handleUseDummy = () => {
-    authService.setDummyToken();
-    onLogin();
-  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -142,10 +121,9 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
         </CardHeader>
         <CardContent>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="login">Login</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="login">Sign In</TabsTrigger>
               <TabsTrigger value="signup">Sign Up</TabsTrigger>
-              <TabsTrigger value="token">JWT Token</TabsTrigger>
             </TabsList>
             
             {/* Error display */}
@@ -264,46 +242,6 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
                   {loading ? 'Creating account...' : 'Create Account'}
                 </Button>
               </form>
-            </TabsContent>
-
-            {/* JWT Token Tab */}
-            <TabsContent value="token" className="space-y-4 mt-4">
-              <form onSubmit={handleTokenSubmit} className="space-y-4">
-                <div>
-                  <Label htmlFor="token">JWT Token</Label>
-                  <Input
-                    id="token"
-                    type="password"
-                    value={token}
-                    onChange={(e) => setToken(e.target.value)}
-                    placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                    className="font-mono text-sm"
-                    disabled={loading}
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <Button type="submit" className="w-full" disabled={loading}>
-                    Use Token
-                  </Button>
-                  
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    className="w-full"
-                    onClick={handleUseDummy}
-                    disabled={loading}
-                  >
-                    Use Dummy Token (Development)
-                  </Button>
-                </div>
-              </form>
-              
-              <div className="text-xs text-muted-foreground">
-                <p><strong>For development:</strong></p>
-                <p>• Use "Use Dummy Token" button, or</p>
-                <p>• Set VITE_JWT_TOKEN in .env.local</p>
-              </div>
             </TabsContent>
           </Tabs>
         </CardContent>

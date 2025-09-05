@@ -11,6 +11,10 @@ class AspenClient {
     this.token = token;
   }
 
+  clearJwtToken() {
+    this.token = null;
+  }
+
   setApiKey(apiKey: string) {
     this.apiKey = apiKey;
   }

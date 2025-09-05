@@ -35,6 +35,8 @@ class ExpertsService {
   async deleteExpert(expertId: number): Promise<void> {
     return aspenClient.delete(`/api/v1/experts/${expertId}`);
   }
+
+
 }
 
 export const expertsService = new ExpertsService(); 

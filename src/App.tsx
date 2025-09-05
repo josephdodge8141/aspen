@@ -39,19 +39,16 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    // Initialize auth on app start
-    authService.initializeAuth();
+    // Check if user has a valid token in localStorage
+    const token = authService.getToken();
     
-    // Try to use environment variable token first
-    if (!authService.isAuthenticated()) {
-      const hasEnvToken = authService.initializeWithEnvToken();
-      
-      if (hasEnvToken) {
-        setIsAuthenticated(true);
-      }
-      // Don't auto-set dummy token anymore - show login form instead
-    } else {
+    if (token) {
+      // Initialize the client with the existing token
+      authService.initializeAuth();
       setIsAuthenticated(true);
+    } else {
+      // No token found - user must login
+      setIsAuthenticated(false);
     }
   }, []);
 

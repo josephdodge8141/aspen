@@ -86,7 +86,9 @@ class AuthService {
 
   logout() {
     this.removeToken();
-    // Optionally redirect to login or reload the page
+    // Clear the JWT token from the client
+    aspenClient.clearJwtToken();
+    // Reload the page to reset the app state
     window.location.reload();
   }
 
@@ -108,17 +110,7 @@ class AuthService {
     });
   }
 
-  // Initialize with environment variable if available
-  initializeWithEnvToken() {
-    // Check for environment variable first
-    const envToken = import.meta.env.VITE_JWT_TOKEN;
-    if (envToken) {
-      console.log('Using JWT token from environment variable');
-      this.setToken(envToken);
-      return true;
-    }
-    return false;
-  }
+
 }
 
 export const authService = new AuthService(); 

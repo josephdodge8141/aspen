@@ -109,7 +109,7 @@ ENVIRONMENT=development  # optional
 3. **Teams Management**: Implement when backend supports team operations
 
 ### Production Considerations
-1. Replace dummy JWT token with real authentication flow
+1. Implement the backend authentication endpoints (`/api/v1/auth/login` and `/api/v1/auth/register`)
 2. Add proper error boundaries
 3. Implement token refresh logic
 4. Add rate limiting handling
@@ -125,4 +125,4 @@ ENVIRONMENT=development  # optional
 - `src/components/figma/` - Removed entirely
 
 ## Summary
-The frontend has been successfully integrated with the documented backend APIs. All dummy data has been removed and replaced with real API calls. The application now communicates with the actual Aspen backend for services management and AI execution functionality. 
+The frontend has been successfully integrated with the documented backend APIs. All dummy data has been removed and replaced with real API calls. The application enforces proper authentication through the login page only - no environment variables or bypass methods. Users must authenticate through the backend's login/register endpoints to access the application. 

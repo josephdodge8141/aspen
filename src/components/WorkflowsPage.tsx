@@ -4,6 +4,7 @@ import { Badge } from './ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Separator } from './ui/separator';
 import { ScrollArea } from './ui/scroll-area';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import {
   Table,
   TableBody,
@@ -34,11 +35,14 @@ interface WorkflowsPageProps {
   onCreate: () => void;
 }
 
+
+
 export default function WorkflowsPage({ onEdit, onCreate }: WorkflowsPageProps) {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
 
   useEffect(() => {
     loadWorkflows();
@@ -83,6 +87,8 @@ export default function WorkflowsPage({ onEdit, onCreate }: WorkflowsPageProps) 
       setError(err instanceof Error ? err.message : 'Failed to delete workflow');
     }
   };
+
+
 
   if (loading) {
     return (
@@ -130,9 +136,9 @@ export default function WorkflowsPage({ onEdit, onCreate }: WorkflowsPageProps) 
                 <TableHead className="w-8"></TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Description</TableHead>
-                <TableHead>Experts</TableHead>
-                <TableHead>Team</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>Node Count</TableHead>
+                <TableHead>Team ID</TableHead>
+                <TableHead>Created</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -146,7 +152,7 @@ export default function WorkflowsPage({ onEdit, onCreate }: WorkflowsPageProps) 
                         onClick={() => toggleRow(workflow.id)}
                       >
                         <TableCell>
-                          {expandedRows.has(workflow.id) ? (
+                          {expandedRows.has(workflow.id.toString()) ? (
                             <ChevronDown className="h-4 w-4" />
                           ) : (
                             <ChevronRight className="h-4 w-4" />
@@ -157,13 +163,11 @@ export default function WorkflowsPage({ onEdit, onCreate }: WorkflowsPageProps) 
                           {workflow.description}
                         </TableCell>
                         <TableCell>
-                          <Badge variant="secondary">{workflow.experts.length}</Badge>
+                          <Badge variant="secondary">{workflow.node_count}</Badge>
                         </TableCell>
-                        <TableCell>{workflow.team}</TableCell>
+                        <TableCell>{workflow.team_id}</TableCell>
                         <TableCell>
-                          <Badge className={getStatusColor(workflow.status)}>
-                            {workflow.status}
-                          </Badge>
+                          {new Date(workflow.created_on).toLocaleDateString()}
                         </TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           <div className="flex space-x-2">
@@ -177,13 +181,17 @@ export default function WorkflowsPage({ onEdit, onCreate }: WorkflowsPageProps) 
                             <Button 
                               variant="ghost" 
                               size="sm"
-                              onClick={() => onEdit(workflow.id)}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="sm">
-                              <Archive className="h-4 w-4" />
-                            </Button>
+                                                          onClick={() => onEdit(workflow.id.toString())}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            onClick={() => handleDeleteWorkflow(workflow.id)}
+                          >
+                            <Archive className="h-4 w-4" />
+                          </Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -193,54 +201,28 @@ export default function WorkflowsPage({ onEdit, onCreate }: WorkflowsPageProps) 
                         <TableCell colSpan={7}>
                           <div className="p-4 bg-muted/50 rounded-md space-y-4">
                             <div>
-                              <h4>Full Description</h4>
+                              <h4>Description</h4>
                               <p className="text-sm mt-1">{workflow.description}</p>
                             </div>
                             
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                               <div>
-                                <h4>Associated Experts</h4>
-                                <ScrollArea className="h-24 mt-2">
-                                  <div className="space-y-1">
-                                    {workflow.experts.map((expert) => (
-                                      <Badge key={expert} variant="secondary" className="mr-1 mb-1">
-                                        {expert}
-                                      </Badge>
-                                    ))}
-                                  </div>
-                                </ScrollArea>
+                                <h4>Node Count</h4>
+                                <p className="text-sm mt-1">{workflow.node_count}</p>
                               </div>
                               
                               <div>
-                                <h4>Services</h4>
-                                <ScrollArea className="h-24 mt-2">
-                                  <div className="space-y-1">
-                                    {workflow.services.map((service) => (
-                                      <Badge key={service} variant="outline" className="mr-1 mb-1">
-                                        {service}
-                                      </Badge>
-                                    ))}
-                                  </div>
-                                </ScrollArea>
+                                <h4>Team ID</h4>
+                                <p className="text-sm mt-1">{workflow.team_id}</p>
                               </div>
                               
                               <div>
-                                <h4>Configuration</h4>
-                                <div className="space-y-2 text-sm">
-                                  <div>
-                                    <span className="text-muted-foreground">Trigger:</span> {getTriggerDisplay(workflow)}
-                                  </div>
-                                  {workflow.apiUrl && (
-                                    <div>
-                                      <span className="text-muted-foreground">API URL:</span> {workflow.apiUrl}
-                                    </div>
-                                  )}
-                                  <div>
-                                    <span className="text-muted-foreground">Retry Count:</span> {workflow.retryCount}
-                                  </div>
-                                </div>
+                                <h4>Created On</h4>
+                                <p className="text-sm mt-1">{new Date(workflow.created_on).toLocaleString()}</p>
                               </div>
                             </div>
+                            
+
                           </div>
                         </TableCell>
                       </TableRow>

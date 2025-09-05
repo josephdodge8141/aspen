@@ -5,8 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Textarea } from './ui/textarea';
 import { Separator } from './ui/separator';
 import { ScrollArea } from './ui/scroll-area';
 import {
@@ -34,6 +34,8 @@ import { expertsService, type Expert as BackendExpert } from '../services';
 
 interface Expert extends BackendExpert {}
 
+
+
 export default function ExpertsPage() {
   const [experts, setExperts] = useState<Expert[]>([]);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
@@ -41,6 +43,7 @@ export default function ExpertsPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
 
   useEffect(() => {
     loadExperts();
@@ -124,6 +127,8 @@ export default function ExpertsPage() {
       setError(err instanceof Error ? err.message : 'Failed to delete expert');
     }
   };
+
+
 
   if (loading) {
     return (
@@ -252,6 +257,8 @@ export default function ExpertsPage() {
                               <Label>Created On</Label>
                               <p className="text-sm mt-1">{new Date(expert.created_on).toLocaleString()}</p>
                             </div>
+                            
+
                           </div>
                         </TableCell>
                       </TableRow>

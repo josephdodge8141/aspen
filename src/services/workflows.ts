@@ -35,6 +35,8 @@ class WorkflowsService {
   async deleteWorkflow(workflowId: number): Promise<void> {
     return aspenClient.delete(`/api/v1/workflows/${workflowId}`);
   }
+
+
 }
 
 export const workflowsService = new WorkflowsService(); 
